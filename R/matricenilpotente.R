@@ -1,121 +1,64 @@
-# ==============================================================================
-# PIPELINE MARKOVIEN & ANALYSE DE NILPOTENCE
-# ==============================================================================
-
-library(survival)
-
-# ------------------------------------------------------------------------------
-# ÉTAPE 1 : FONCTION GÉNÉRIQUE D'EXTRACTION DE LA MATRICE DE TRANSITION
-# ------------------------------------------------------------------------------
-
-#' Extrait la sous-matrice Q des états transitoires depuis n'importe quel dataset
+#' Extrait la sous-matrice Q, teste sa nilpotence et renvoie le bilan complet
 #'
-#' @param data Dataframe contenant les observations cliniques.
-#' @param state_col Nom de la colonne représentant les états (ex: "ph.ecog").
-#' @param status_col Nom de la colonne représentant le statut vital (ex: "status").
-#' @param event_code Valeur indiquant l'événement absorbant (décès, ex: 2).
-#' @return La sous-matrice carrée Q des états transitoires.
-extract_markov_matrix <- function(data, state_col, status_col, event_code = 2) {
+#' @param data Dataframe issu du dataset de la NASA.
+#' @param state_col Nom de la colonne représentant l'usure ou les cycles (ex: "Tool_wear_min").
+#' @param status_col Nom de la colonne représentant la panne (ex: "Machine_failure").
+#' @param n_stades Nombre de stades de dégradation souhaités (par défaut 4).
+#' @param tol Tolérance numérique pour le test de nilpotence.
+#' @return Une liste contenant la matrice Q, le statut est_nilpotent et l'indice_k.
+#' @export
+extract_markov_matrix <- function(data, state_col, status_col, n_stades = 4, tol = 1e-7) {
 
-  # Nettoyage des données manquantes sur les variables clés
+  # 1. Nettoyage des valeurs manquantes
   valid_rows <- !is.na(data[[state_col]]) & !is.na(data[[status_col]])
   df_clean <- data[valid_rows, ]
 
-  # Identification des états transitoires uniques
-  states <- sort(unique(df_clean[[state_col]]))
+  # 2. Discrétisation de la variable continue (ex: usure en minutes) en N stades ordonnés
+  if (is.numeric(df_clean[[state_col]])) {
+    df_clean$stade_var <- as.numeric(cut(df_clean[[state_col]], breaks = n_stades, labels = FALSE)) - 1
+  } else {
+    df_clean$stade_var <- df_clean[[state_col]]
+  }
+
+  states <- sort(unique(df_clean$stade_var))
   n_states <- length(states)
 
   if (n_states < 2) {
-    stop("Le dataset doit contenir au moins 2 états transitoires distincts.")
+    stop("Le dataset doit contenir au moins 2 états de dégradation distincts.")
   }
 
-  # Initialisation de la sous-matrice Q (dimension n x n)
+  # 3. Construction de la sous-matrice Q des états transitoires d'usure
   Q <- matrix(0, nrow = n_states, ncol = n_states)
-  rownames(Q) <- colnames(Q) <- paste0("State_", states)
+  rownames(Q) <- colnames(Q) <- paste0("Stade_Usure_", states)
 
-  # Construction des transitions orientées (progression strictly croissante)
   for (i in 1:(n_states - 1)) {
-    Q[i, i + 1] <- 0.65  # Probabilité de détérioration vers le stade suivant
+    # Probabilité empirique ou transition séquentielle de détérioration
+    Q[i, i + 1] <- 0.70
   }
 
-  return(Q)
-}
-
-
-# ------------------------------------------------------------------------------
-# ÉTAPE 2 : FONCTIONS D'ANALYSE ALGÉBRIQUE DU PACKAGE
-# ------------------------------------------------------------------------------
-
-#' Testeur de nilpotence (Théorème de Cayley-Hamilton)
-is_nilpotent <- function(A, tol = 1e-7) {
-  if (!is.matrix(A) || nrow(A) != ncol(A)) {
-    stop("L'argument 'A' doit être une matrice carrée.")
-  }
-
-  n <- nrow(A)
-  M <- A
+  # 4. Test automatique de nilpotence (Cayley-Hamilton) & calcul de l'indice k
+  n <- nrow(Q)
+  M <- Q
+  est_nilpotent <- FALSE
+  indice_k <- NA
 
   for (k in 1:n) {
     if (max(abs(M)) < tol) {
-      return(TRUE)
+      est_nilpotent <- TRUE
+      indice_k <- k
+      break
     }
-    M <- M %*% A
+    M <- M %*% Q
   }
 
-  return(FALSE)
+  # 5. Renvoi du bilan complet
+  resultat <- list(
+    matrice_Q = Q,
+    est_nilpotent = est_nilpotent,
+    indice_k = indice_k,
+    dimension = n
+  )
+
+  class(resultat) <- "engineering_nilpotent"
+  return(resultat)
 }
-
-#' Calculateur de l'indice de nilpotence k
-nilpotent_index <- function(A, tol = 1e-7) {
-  if (!is_nilpotent(A, tol = tol)) {
-    stop("La matrice fournie n'est pas nilpotente.")
-  }
-
-  n <- nrow(A)
-  M <- A
-
-  for (k in 1:n) {
-    if (max(abs(M)) < tol) {
-      return(k)
-    }
-    M <- M %*% A
-  }
-}
-
-
-# ==============================================================================
-# ÉTAPE 3 : EXÉCUTION DU PIPELINE SUR LE DATASET LUNG
-# ==============================================================================
-
-# Chargement du jeu de données lung (package survival)
-survival::lung
-
-cat("======================================================================\n")
-cat(" 1. EXTRACTION DE LA MATRICE Q DEPUIS LE DATASET LUNG\n")
-cat("======================================================================\n")
-
-# Extraction automatique de la sous-matrice Q
-Q_lung <- extract_markov_matrix(
-  data = lung,
-  state_col = "ph.ecog",
-  status_col = "status",
-  event_code = 2
-)
-
-cat("Matrice Q extraite des états ECOG :\n")
-print(Q_lung)
-
-cat("\n======================================================================\n")
-cat(" 2. ÉVALUATION ALGÉBRIQUE DE LA MATRICE EXTRAITE\n")
-cat("======================================================================\n")
-
-# Test de nilpotence avec is_nilpotent()
-est_nilp <- is_nilpotent(Q_lung)
-cat("La matrice Q extraite est-elle nilpotente ? :", est_nilp, "\n")
-
-# Calcul de l'indice k avec nilpotent_index()
-if (est_nilp) {
-  k <- nilpotent_index(Q_lung)
-  cat("Indice de nilpotence k (horizon temporel max de progression) :", k, "\n")
-}
-cat("======================================================================\n")

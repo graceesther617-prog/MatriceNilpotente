@@ -1,16 +1,13 @@
 Package: MatriceNilpotente
 Type: Package
-Title: Les matrices nilpotentes
-Version: 0.1.0
-Authors@R: c(
-    person(
-      "Grace"
-      email = "graceesther617@gmail.com",
-      role = c("aut", "cre")
-    )
-  )
-Description:Mon package extrait les matrices d'un dataset,vérifie sa nilpotence puis détermine son indice de nilpotence.
-Son indice de nilpotence est le nombre d'étapes maximales jusqu'à l'étape finale.
-License: GPL-3
+Title: Analyse de Nilpotence et Modeles Markoviens
+Version: 1.0.0
+Author: NGO LISSOUCK ESTHER GRACE
+Maintainer: Ton Nom <graceesther617@gmail.com>
+Description: Package pour l'analyse de la nilpotence des matrices de transition markoviennes.
+License: MIT
 Encoding: UTF-8
 LazyData: true
+Depends: 
+    R (>= 3.5),
+    survival
